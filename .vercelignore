@@ -1,0 +1,11 @@
+node_modules
+.next
+.next-dev
+remotion
+raw_assets
+deliverables
+.clawhub
+.env.local
+.git
+__pycache__
+*.pyc
