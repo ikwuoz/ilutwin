@@ -22,10 +22,24 @@ export type UnitKind =
   | 'walkway_m'
   | 'custom_unit';
 
+export type TransformMode = 'translate' | 'rotate' | 'scale';
+
+export interface PropInstance {
+  /** Instance suffix within a pin group ("0", "1", ...). Index "0" is the primary tagged instance. */
+  id: string;
+  label?: string;
+  position: [number, number, number];
+  modelScale?: number;
+  modelStretch?: [number, number, number];
+  rotationY?: number;
+  rotation?: [number, number, number];
+}
+
 export interface TransformOverride {
   position: [number, number, number];
   modelScale: number;
   rotationY?: number;
+  rotation?: [number, number, number];
   locked?: boolean;
 }
 
@@ -51,8 +65,11 @@ export interface CommunityProblemPin {
   unitKind: UnitKind;
   unitAmount: number;
   estimatedCostNgn: number;
+  /** Optional per-instance cost & unit amount for auto-computed corridor arrays */
+  unitCostNgn?: number;
+  unitAmountPerInstance?: number;
   householdsImpacted: number;
-  /** Pin & Lux3D prop coordinates [x, y, z] in the 3D street scene */
+  /** Pin & primary Lux3D prop coordinates [x, y, z] in the 3D street scene */
   position: [number, number, number];
   /** Uniform scale for the Lux3D .glb prop */
   modelScale: number;
@@ -62,6 +79,12 @@ export interface CommunityProblemPin {
   rotationY?: number;
   /** Optional Euler rotation [rx, ry, rz] in radians */
   rotation?: [number, number, number];
+  /**
+   * Optional multi-instance array along the street corridor.
+   * Only the primary instance (index 0) displays the floating tag, while all
+   * instances render in 3D and automatically roll up into cost & impact totals.
+   */
+  instances?: PropInstance[];
   /** Smooth camera viewpoint when user focuses this hotspot */
   cameraPosition: [number, number, number];
   cameraTarget: [number, number, number];
@@ -132,7 +155,7 @@ export const CAMERA_PRESETS: CameraPreset[] = [
     label: 'Alley Lighting',
     shortcut: '3',
     position: [1.4, 2.0, -0.4],
-    target: [-1.7, 1.35, -4.2],
+    target: [-0.65, 1.35, -4.24],
     pinId: 'pin-streetlight',
   },
   {
@@ -140,7 +163,7 @@ export const CAMERA_PRESETS: CameraPreset[] = [
     label: 'Waste Hub',
     shortcut: '4',
     position: [-0.1, 1.85, -0.5],
-    target: [1.75, 0.78, -4.05],
+    target: [1.0, 0.78, -4.18],
     pinId: 'pin-waste',
   },
 ];
@@ -234,18 +257,27 @@ export const COMMUNITY_PROBLEM_PINS: CommunityProblemPin[] = [
     residentNote:
       '"Water reaches our compound step every time it rains for 20 minutes—kids wade through dirty runoff on their way to school."',
     proposedFix:
-      'Install modular precast concrete drainage channels with removable slotted steel covers along the street edge.',
+      'Install continuous modular precast concrete drainage slabs with slotted steel grates across the full visible street gutter.',
     impactMetric: '-75% standing floodwater',
     unitKind: 'drainage_m',
-    unitAmount: 15,
-    estimatedCostNgn: 480_000,
-    householdsImpacted: 32,
-    position: [0.1, -0.32, -2.7],
-    modelScale: 0.75,
-    modelStretch: [1.55, 0.7, 1.08],
-    rotation: [0.02, Math.PI / 2 - 0.06, 0.04],
+    unitAmount: 20,
+    unitAmountPerInstance: 4,
+    unitCostNgn: 160_000,
+    estimatedCostNgn: 800_000,
+    householdsImpacted: 42,
+    position: [0.1, -0.34, -3.05],
+    modelScale: 0.72,
+    modelStretch: [1.28, 0.62, 1.48],
+    rotation: [0.16, -0.05, 0],
+    instances: [
+      { id: '0', label: 'Drain Slab 1 (Center · Tagged)', position: [0.1, -0.34, -3.05] },
+      { id: '1', label: 'Drain Slab 2 (Mid-West)', position: [-1.1, -0.34, -3.11] },
+      { id: '2', label: 'Drain Slab 3 (Far West)', position: [-2.3, -0.34, -3.17] },
+      { id: '3', label: 'Drain Slab 4 (Mid-East)', position: [1.3, -0.34, -2.99] },
+      { id: '4', label: 'Drain Slab 5 (Far East)', position: [2.5, -0.34, -2.93] },
+    ],
     cameraPosition: [1.65, 1.55, -0.1],
-    cameraTarget: [-0.05, 0.12, -2.7],
+    cameraTarget: [0.1, 0.08, -3.05],
     modelPath: '/models/drain_cover.glb',
     fallbackKind: 'drain',
     lux3dPrompt:
@@ -255,23 +287,30 @@ export const COMMUNITY_PROBLEM_PINS: CommunityProblemPin[] = [
   {
     id: 'pin-streetlight',
     title: 'Dark Market Footpath',
-    locationLabel: 'Mid-Street Walk · Pole 2',
+    locationLabel: 'Full Corridor · 3 Solar Poles',
     category: 'No Streetlight',
     severity: 'high',
     residentNote:
       '"Once it is 6:45 PM, the whole corridor goes pitch black. Traders pack early and elders trip over broken edges."',
     proposedFix:
-      'Mount an off-grid solar LED pole with elevated lithium battery enclosure and wide warm-white beam.',
+      'Space off-grid solar LED poles along the visible corridor with outward-facing dual warm-white luminaires.',
     impactMetric: '+3.5 hrs safe evening trade',
     unitKind: 'solar_lamp',
-    unitAmount: 1,
-    estimatedCostNgn: 350_000,
-    householdsImpacted: 28,
-    position: [-1.5, 0, -4.2],
-    modelScale: 0.55,
+    unitAmount: 3,
+    unitAmountPerInstance: 1,
+    unitCostNgn: 350_000,
+    estimatedCostNgn: 1_050_000,
+    householdsImpacted: 56,
+    position: [-0.65, 0.14, -4.24],
+    modelScale: 0.54,
     rotationY: Math.PI / 2,
+    instances: [
+      { id: '0', label: 'Solar Pole 1 (Center · Tagged)', position: [-0.65, 0.14, -4.24] },
+      { id: '1', label: 'Solar Pole 2 (Far West)', position: [-2.85, 0.14, -4.34] },
+      { id: '2', label: 'Solar Pole 3 (Far East)', position: [2.75, 0.14, -4.12] },
+    ],
     cameraPosition: [1.4, 2.0, -0.4],
-    cameraTarget: [-1.7, 1.35, -4.2],
+    cameraTarget: [-0.65, 1.35, -4.24],
     modelPath: '/models/solar_lamp.glb',
     fallbackKind: 'solar',
     lux3dPrompt:
@@ -291,12 +330,14 @@ export const COMMUNITY_PROBLEM_PINS: CommunityProblemPin[] = [
     impactMetric: '100% drain-mouth clearance',
     unitKind: 'waste_hub',
     unitAmount: 1,
+    unitAmountPerInstance: 1,
+    unitCostNgn: 290_000,
     estimatedCostNgn: 290_000,
     householdsImpacted: 25,
-    position: [1.85, 0.22, -4.05],
-    modelScale: 0.64,
+    position: [1.0, 0.22, -4.18],
+    modelScale: 0.56,
     cameraPosition: [-0.1, 1.85, -0.5],
-    cameraTarget: [1.75, 0.78, -4.05],
+    cameraTarget: [1.0, 0.78, -4.18],
     modelPath: '/models/waste_hub.glb',
     fallbackKind: 'waste',
     lux3dPrompt:
@@ -304,6 +345,62 @@ export const COMMUNITY_PROBLEM_PINS: CommunityProblemPin[] = [
     source: 'preset',
   },
 ];
+
+export function getPinInstances(pin: CommunityProblemPin): PropInstance[] {
+  if (pin.instances && pin.instances.length > 0) {
+    return pin.instances;
+  }
+  return [
+    {
+      id: '0',
+      label: pin.title,
+      position: pin.position,
+      modelScale: pin.modelScale,
+      modelStretch: pin.modelStretch,
+      rotationY: pin.rotationY,
+      rotation: pin.rotation,
+    },
+  ];
+}
+
+export function getInstanceOverrideKey(
+  pinId: string,
+  instanceId: string
+): string {
+  return instanceId === '0' ? pinId : `${pinId}#${instanceId}`;
+}
+
+export function parseInstanceOverrideKey(key: string): {
+  pinId: string;
+  instanceId: string;
+} {
+  const hashIdx = key.indexOf('#');
+  if (hashIdx === -1) return { pinId: key, instanceId: '0' };
+  return {
+    pinId: key.slice(0, hashIdx),
+    instanceId: key.slice(hashIdx + 1) || '0',
+  };
+}
+
+export function getPinInstanceCount(pin: CommunityProblemPin): number {
+  return getPinInstances(pin).length;
+}
+
+export function getPinComputedCost(pin: CommunityProblemPin): number {
+  const count = getPinInstanceCount(pin);
+  if (typeof pin.unitCostNgn === 'number') {
+    return pin.unitCostNgn * count;
+  }
+  return pin.estimatedCostNgn;
+}
+
+export function getPinComputedUnitAmount(pin: CommunityProblemPin): number {
+  const count = getPinInstanceCount(pin);
+  if (typeof pin.unitAmountPerInstance === 'number') {
+    return pin.unitAmountPerInstance * count;
+  }
+  return pin.unitAmount;
+}
 
 export function formatNgn(amount: number): string {
   return `₦${amount.toLocaleString('en-NG')}`;
@@ -329,19 +426,21 @@ export function summarizeCivicImpact(
   let householdsImpacted = 0;
 
   for (const pin of activePins) {
-    totalCostNgn += pin.estimatedCostNgn;
+    const cost = getPinComputedCost(pin);
+    const amount = getPinComputedUnitAmount(pin);
+    totalCostNgn += cost;
     householdsImpacted += pin.householdsImpacted;
-    if (pin.unitKind === 'drainage_m') counts.drainageMeters += pin.unitAmount;
-    else if (pin.unitKind === 'solar_lamp') counts.solarLamps += pin.unitAmount;
-    else if (pin.unitKind === 'waste_hub') counts.wasteHubs += pin.unitAmount;
-    else if (pin.unitKind === 'walkway_m') counts.walkwayMeters += pin.unitAmount;
-    else counts.customUnits += pin.unitAmount;
+    if (pin.unitKind === 'drainage_m') counts.drainageMeters += amount;
+    else if (pin.unitKind === 'solar_lamp') counts.solarLamps += amount;
+    else if (pin.unitKind === 'waste_hub') counts.wasteHubs += amount;
+    else if (pin.unitKind === 'walkway_m') counts.walkwayMeters += amount;
+    else counts.customUnits += amount;
   }
 
   let plannedCostNgn = 0;
   let plannedHouseholdsImpacted = 0;
   for (const pin of plannedPins) {
-    plannedCostNgn += pin.estimatedCostNgn;
+    plannedCostNgn += getPinComputedCost(pin);
     plannedHouseholdsImpacted += pin.householdsImpacted;
   }
 

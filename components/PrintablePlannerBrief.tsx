@@ -3,6 +3,8 @@
 import { IluTwinMark } from '@/components/IluTwinMark';
 import {
   formatNgn,
+  getPinComputedCost,
+  getPinInstanceCount,
   type CivicImpactSummary,
   type ViewMode,
 } from '@/lib/data/upgrades';
@@ -119,7 +121,12 @@ export function PrintablePlannerBrief({
                   [{pin.position.join(', ')}]
                 </td>
                 <td className="tabular-mono p-2.5 text-right font-semibold">
-                  {formatNgn(pin.estimatedCostNgn)}
+                  {formatNgn(getPinComputedCost(pin))}
+                  {getPinInstanceCount(pin) > 1 && (
+                    <div className="text-[10px] font-normal text-[#6E7570]">
+                      ×{getPinInstanceCount(pin)} units
+                    </div>
+                  )}
                 </td>
                 <td className="tabular-mono p-2.5 text-right font-semibold">
                   {pin.householdsImpacted}

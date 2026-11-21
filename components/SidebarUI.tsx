@@ -21,6 +21,7 @@ import {
   Move,
   Printer,
   RotateCcw,
+  RotateCw,
   Scaling,
   Sparkles,
   Sun,
@@ -32,9 +33,15 @@ import {
 } from 'lucide-react';
 import {
   formatNgn,
+  getInstanceOverrideKey,
+  getPinComputedCost,
+  getPinInstanceCount,
+  getPinInstances,
+  parseInstanceOverrideKey,
   type CivicImpactSummary,
   type CommunityProblemPin,
   type PinCategory,
+  type TransformMode,
   type TransformOverride,
   type ViewMode,
 } from '@/lib/data/upgrades';
@@ -44,7 +51,11 @@ interface SidebarUIProps {
   viewMode: ViewMode;
   onChangeViewMode: (mode: ViewMode) => void;
   selectedPinId: string | null;
-  onSelectPin: (pin: CommunityProblemPin | null) => void;
+  selectedInstanceKey?: string | null;
+  onSelectPin: (
+    pin: CommunityProblemPin | null,
+    options?: { skipFly?: boolean; instanceKey?: string }
+  ) => void;
   activeHotspotIds: string[];
   onToggleHotspot: (pinId: string) => void;
   onToggleAllHotspots: (enable: boolean) => void;
@@ -57,12 +68,12 @@ interface SidebarUIProps {
   onPrintSummary: () => void;
   devTransformEnabled: boolean;
   onToggleDevTransform: () => void;
-  transformMode: 'translate' | 'scale';
-  onChangeTransformMode: (mode: 'translate' | 'scale') => void;
+  transformMode: TransformMode;
+  onChangeTransformMode: (mode: TransformMode) => void;
   transformOverrides: Record<string, TransformOverride>;
-  onUpdateTransform: (pinId: string, next: TransformOverride) => void;
-  onResetPinTransform: (pinId: string) => void;
-  onToggleLockPin: (pinId: string) => void;
+  onUpdateTransform: (instanceKey: string, next: TransformOverride) => void;
+  onResetPinTransform: (instanceKey: string) => void;
+  onToggleLockPin: (instanceKey: string) => void;
   customGlbUrl?: string | null;
 }
 
@@ -91,6 +102,7 @@ export function SidebarUI({
   viewMode,
   onChangeViewMode,
   selectedPinId,
+  selectedInstanceKey,
   onSelectPin,
   activeHotspotIds,
   onToggleHotspot,
@@ -116,23 +128,46 @@ export function SidebarUI({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const selectedPin = pins.find((p) => p.id === selectedPinId) ?? null;
-  const isSelectedLocked = selectedPin
-    ? Boolean(transformOverrides[selectedPin.id]?.locked)
+  const selectedPinInstances = selectedPin ? getPinInstances(selectedPin) : [];
+  const activeKey = selectedPin
+    ? (selectedInstanceKey &&
+      parseInstanceOverrideKey(selectedInstanceKey).pinId === selectedPin.id
+        ? selectedInstanceKey
+        : getInstanceOverrideKey(selectedPin.id, '0'))
+    : null;
+  const activeInst =
+    selectedPin && activeKey
+      ? (selectedPinInstances.find(
+          (i) => i.id === parseInstanceOverrideKey(activeKey).instanceId
+        ) ?? selectedPinInstances[0])
+      : null;
+
+  const isSelectedLocked = activeKey
+    ? Boolean(transformOverrides[activeKey]?.locked)
     : false;
   const allEnabled = pins.length > 0 && activeHotspotIds.length === pins.length;
 
-  const activePos = selectedPin
-    ? (transformOverrides[selectedPin.id]?.position ?? selectedPin.position)
-    : null;
-  const activeScale = selectedPin
-    ? (transformOverrides[selectedPin.id]?.modelScale ?? selectedPin.modelScale)
-    : null;
-  const activeRotationY = selectedPin
-    ? (transformOverrides[selectedPin.id]?.rotationY ??
-      selectedPin.rotation?.[1] ??
-      selectedPin.rotationY ??
-      0)
-    : 0;
+  const activePos =
+    selectedPin && activeKey
+      ? (transformOverrides[activeKey]?.position ??
+        activeInst?.position ??
+        selectedPin.position)
+      : null;
+  const activeScale =
+    selectedPin && activeKey
+      ? (transformOverrides[activeKey]?.modelScale ??
+        activeInst?.modelScale ??
+        selectedPin.modelScale)
+      : null;
+  const activeRotationY =
+    selectedPin && activeKey
+      ? (transformOverrides[activeKey]?.rotationY ??
+        activeInst?.rotation?.[1] ??
+        activeInst?.rotationY ??
+        selectedPin.rotation?.[1] ??
+        selectedPin.rotationY ??
+        0)
+      : 0;
 
   const handleCopyCoords = async () => {
     if (!selectedPin || !activePos || activeScale === null) return;
@@ -465,8 +500,16 @@ export function SidebarUI({
                         </p>
                         <div className="tabular-mono mt-0.5 flex items-center gap-2 text-[10px] font-medium text-[#6E7570]">
                           <span className="font-semibold text-[#1B6E2D]">
-                            {formatNgn(pin.estimatedCostNgn)}
+                            {formatNgn(getPinComputedCost(pin))}
                           </span>
+                          {getPinInstanceCount(pin) > 1 && (
+                            <>
+                              <span>·</span>
+                              <span className="font-semibold text-[#0F4C4C]">
+                                ×{getPinInstanceCount(pin)}
+                              </span>
+                            </>
+                          )}
                           <span>·</span>
                           <span>{pin.householdsImpacted} hh</span>
                         </div>
@@ -541,266 +584,319 @@ export function SidebarUI({
         )}
 
         {/* Prop Placement & Position Lock HUD */}
-        {selectedPin && viewMode === 'upgrade' && activePos && activeScale !== null && (
-          <div
-            className={`rounded-xl border p-3 text-xs ${
-              isSelectedLocked
-                ? 'border-[#B45309]/40 bg-[#B45309]/5'
-                : 'border-dashed border-[#0F4C4C]/40 bg-[#0F4C4C]/5'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 font-bold text-[#0F4C4C]">
-                <Wrench className="h-3.5 w-3.5" />
-                Prop Placement
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => onToggleLockPin(selectedPin.id)}
-                  title="Shortcut: L"
-                  className={`hud-transition inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold ${
-                    isSelectedLocked
-                      ? 'bg-[#B45309] text-white hover:bg-[#92400E]'
-                      : 'bg-[#1B6E2D] text-white hover:bg-[#155724]'
-                  }`}
-                >
-                  {isSelectedLocked ? (
-                    <>
-                      <Unlock className="h-3 w-3" />
-                      Unlock
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="h-3 w-3" />
-                      Lock
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={onToggleDevTransform}
-                  className={`hud-transition rounded-lg px-2 py-1 text-[10px] font-bold ${
-                    devTransformEnabled
-                      ? 'bg-[#0F4C4C] text-white'
-                      : 'bg-white text-[#0F4C4C] ring-1 ring-[#0F4C4C]/30'
-                  }`}
-                >
-                  {devTransformEnabled ? 'Hide' : 'Adjust'}
-                </button>
-              </div>
-            </div>
-
-            <p className="mt-1.5 text-[10px] text-[#4A504C]">
-              {isSelectedLocked ? (
-                <>
-                  Position locked (<code className="font-mono">[L]</code> to
-                  unlock). Orbit safely without moving prop.
-                </>
-              ) : (
-                <>
-                  Click &amp; drag prop in 3D (<code className="font-mono">Shift</code>
-                  +drag height), then <strong>Lock</strong> (<code className="font-mono">L</code>).
-                </>
-              )}
-            </p>
-
-            {devTransformEnabled && (
-              <div className="mt-2.5 space-y-2">
-                {splatStatus !== 'loaded' && (
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      disabled={isSelectedLocked}
-                      onClick={() => onChangeTransformMode('translate')}
-                      className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold disabled:opacity-45 ${
-                        transformMode === 'translate'
-                          ? 'bg-[#C85A32] text-white'
-                          : 'bg-white text-[#4A504C]'
-                      }`}
-                    >
-                      <Move className="h-3 w-3" />
-                      Move (G)
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isSelectedLocked}
-                      onClick={() => onChangeTransformMode('scale')}
-                      className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold disabled:opacity-45 ${
-                        transformMode === 'scale'
-                          ? 'bg-[#C85A32] text-white'
-                          : 'bg-white text-[#4A504C]'
-                      }`}
-                    >
-                      <Scaling className="h-3 w-3" />
-                      Scale (S)
-                    </button>
-                  </div>
-                )}
-
-                <div className="space-y-1.5 rounded-lg bg-white p-2 text-[10px] text-[#111312]">
-                  {(['X', 'Y', 'Z'] as const).map((axis, idx) => (
-                    <div
-                      key={axis}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span className="tabular-mono font-bold text-[#6E7570]">
-                        {axis}: {activePos[idx]}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          disabled={isSelectedLocked}
-                          onClick={() => {
-                            const nextPos: [number, number, number] = [
-                              ...activePos,
-                            ];
-                            nextPos[idx] =
-                              Math.round((nextPos[idx] - 0.25) * 100) / 100;
-                            onUpdateTransform(selectedPin.id, {
-                              position: nextPos,
-                              modelScale: activeScale,
-                              rotationY: activeRotationY,
-                              locked: isSelectedLocked,
-                            });
-                          }}
-                          className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          -0.25
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isSelectedLocked}
-                          onClick={() => {
-                            const nextPos: [number, number, number] = [
-                              ...activePos,
-                            ];
-                            nextPos[idx] =
-                              Math.round((nextPos[idx] + 0.25) * 100) / 100;
-                            onUpdateTransform(selectedPin.id, {
-                              position: nextPos,
-                              modelScale: activeScale,
-                              rotationY: activeRotationY,
-                              locked: isSelectedLocked,
-                            });
-                          }}
-                          className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          +0.25
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between gap-2 border-t border-[var(--hud-border-subtle)] pt-1.5">
-                    <span className="tabular-mono font-bold text-[#6E7570]">
-                      Scale: {activeScale}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={isSelectedLocked}
-                        onClick={() =>
-                          onUpdateTransform(selectedPin.id, {
-                            position: activePos,
-                            modelScale: Math.max(
-                              0.15,
-                              Math.round((activeScale - 0.1) * 100) / 100
-                            ),
-                            rotationY: activeRotationY,
-                            locked: isSelectedLocked,
-                          })
-                        }
-                        className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        -0.1
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isSelectedLocked}
-                        onClick={() =>
-                          onUpdateTransform(selectedPin.id, {
-                            position: activePos,
-                            modelScale:
-                              Math.round((activeScale + 0.1) * 100) / 100,
-                            rotationY: activeRotationY,
-                            locked: isSelectedLocked,
-                          })
-                        }
-                        className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        +0.1
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 border-t border-[var(--hud-border-subtle)] pt-1.5">
-                    <span className="tabular-mono font-bold text-[#6E7570]">
-                      Rot Y: {Math.round((activeRotationY * 180) / Math.PI)}°
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={isSelectedLocked}
-                        onClick={() =>
-                          onUpdateTransform(selectedPin.id, {
-                            position: activePos,
-                            modelScale: activeScale,
-                            rotationY: activeRotationY - Math.PI / 12,
-                            locked: isSelectedLocked,
-                          })
-                        }
-                        className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        -15°
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isSelectedLocked}
-                        onClick={() =>
-                          onUpdateTransform(selectedPin.id, {
-                            position: activePos,
-                            modelScale: activeScale,
-                            rotationY: activeRotationY + Math.PI / 12,
-                            locked: isSelectedLocked,
-                          })
-                        }
-                        className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        +15°
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-1.5">
+        {selectedPin &&
+          activeKey &&
+          viewMode === 'upgrade' &&
+          activePos &&
+          activeScale !== null && (
+            <div
+              className={`rounded-xl border p-3 text-xs ${
+                isSelectedLocked
+                  ? 'border-[#B45309]/40 bg-[#B45309]/5'
+                  : 'border-dashed border-[#0F4C4C]/40 bg-[#0F4C4C]/5'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 font-bold text-[#0F4C4C]">
+                  <Wrench className="h-3.5 w-3.5" />
+                  Prop Placement
+                </span>
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={handleCopyCoords}
-                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#1B6E2D] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-[#155724]"
+                    onClick={() => onToggleLockPin(activeKey)}
+                    title="Shortcut: L"
+                    className={`hud-transition inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold ${
+                      isSelectedLocked
+                        ? 'bg-[#B45309] text-white hover:bg-[#92400E]'
+                        : 'bg-[#1B6E2D] text-white hover:bg-[#155724]'
+                    }`}
                   >
-                    {copiedId === selectedPin.id ? (
+                    {isSelectedLocked ? (
                       <>
-                        <Check className="h-3 w-3" />
-                        Copied!
+                        <Unlock className="h-3 w-3" />
+                        Unlock
                       </>
                     ) : (
                       <>
-                        <Copy className="h-3 w-3" />
-                        Copy Coords
+                        <Lock className="h-3 w-3" />
+                        Lock
                       </>
                     )}
                   </button>
                   <button
                     type="button"
-                    onClick={() => onResetPinTransform(selectedPin.id)}
-                    className="rounded-lg border border-[var(--hud-border-light)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#4A504C] hover:bg-[#EAE9E4]"
+                    onClick={onToggleDevTransform}
+                    className={`hud-transition rounded-lg px-2 py-1 text-[10px] font-bold ${
+                      devTransformEnabled
+                        ? 'bg-[#0F4C4C] text-white'
+                        : 'bg-white text-[#0F4C4C] ring-1 ring-[#0F4C4C]/30'
+                    }`}
                   >
-                    Reset
+                    {devTransformEnabled ? 'Hide' : 'Adjust'}
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-        )}
+
+              {/* Multi-Instance Selector Pills */}
+              {selectedPinInstances.length > 1 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {selectedPinInstances.map((inst, idx) => {
+                    const instKey = getInstanceOverrideKey(
+                      selectedPin.id,
+                      inst.id
+                    );
+                    const isCurrent = instKey === activeKey;
+                    const isInstLocked = Boolean(
+                      transformOverrides[instKey]?.locked
+                    );
+                    return (
+                      <button
+                        key={instKey}
+                        type="button"
+                        onClick={() =>
+                          onSelectPin(selectedPin, {
+                            skipFly: true,
+                            instanceKey: instKey,
+                          })
+                        }
+                        className={`tabular-mono inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          isCurrent
+                            ? 'bg-[#0F4C4C] text-white'
+                            : 'bg-white text-[#4A504C] ring-1 ring-[#111312]/10 hover:bg-[#EAE9E4]'
+                        }`}
+                      >
+                        {isInstLocked && <Lock className="h-2.5 w-2.5" />}
+                        #{idx + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Direct Gizmo Mode Switcher (Move G / Rotate R / Scale S) */}
+              <div className="mt-2 grid grid-cols-3 gap-1">
+                <button
+                  type="button"
+                  disabled={isSelectedLocked}
+                  onClick={() => onChangeTransformMode('translate')}
+                  className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold disabled:opacity-45 ${
+                    transformMode === 'translate'
+                      ? 'bg-[#0F4C4C] text-white'
+                      : 'bg-white text-[#4A504C] hover:bg-[#EAE9E4]'
+                  }`}
+                >
+                  <Move className="h-3 w-3" />
+                  Move (G)
+                </button>
+                <button
+                  type="button"
+                  disabled={isSelectedLocked}
+                  onClick={() => onChangeTransformMode('rotate')}
+                  className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold disabled:opacity-45 ${
+                    transformMode === 'rotate'
+                      ? 'bg-[#0F4C4C] text-white'
+                      : 'bg-white text-[#4A504C] hover:bg-[#EAE9E4]'
+                  }`}
+                >
+                  <RotateCw className="h-3 w-3" />
+                  Rotate (R)
+                </button>
+                <button
+                  type="button"
+                  disabled={isSelectedLocked}
+                  onClick={() => onChangeTransformMode('scale')}
+                  className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold disabled:opacity-45 ${
+                    transformMode === 'scale'
+                      ? 'bg-[#0F4C4C] text-white'
+                      : 'bg-white text-[#4A504C] hover:bg-[#EAE9E4]'
+                  }`}
+                >
+                  <Scaling className="h-3 w-3" />
+                  Scale (S)
+                </button>
+              </div>
+
+              <p className="mt-1.5 text-[10px] text-[#4A504C]">
+                {isSelectedLocked ? (
+                  <>
+                    Position locked (<code className="font-mono">[L]</code> to
+                    unlock). Orbit safely without moving prop.
+                  </>
+                ) : (
+                  <>
+                    Drag prop (<code className="font-mono">Shift</code> height ·{' '}
+                    <code className="font-mono">Alt</code> rotate), use 3D gizmo,
+                    then <strong>Lock</strong> (<code className="font-mono">L</code>).
+                  </>
+                )}
+              </p>
+
+              {devTransformEnabled && (
+                <div className="mt-2.5 space-y-2">
+                  <div className="space-y-1.5 rounded-lg bg-white p-2 text-[10px] text-[#111312]">
+                    {(['X', 'Y', 'Z'] as const).map((axis, idx) => (
+                      <div
+                        key={axis}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="tabular-mono font-bold text-[#6E7570]">
+                          {axis}: {activePos[idx]}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={isSelectedLocked}
+                            onClick={() => {
+                              const nextPos: [number, number, number] = [
+                                ...activePos,
+                              ];
+                              nextPos[idx] =
+                                Math.round((nextPos[idx] - 0.25) * 100) / 100;
+                              onUpdateTransform(activeKey, {
+                                position: nextPos,
+                                modelScale: activeScale,
+                                rotationY: activeRotationY,
+                                locked: isSelectedLocked,
+                              });
+                            }}
+                            className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            -0.25
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSelectedLocked}
+                            onClick={() => {
+                              const nextPos: [number, number, number] = [
+                                ...activePos,
+                              ];
+                              nextPos[idx] =
+                                Math.round((nextPos[idx] + 0.25) * 100) / 100;
+                              onUpdateTransform(activeKey, {
+                                position: nextPos,
+                                modelScale: activeScale,
+                                rotationY: activeRotationY,
+                                locked: isSelectedLocked,
+                              });
+                            }}
+                            className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            +0.25
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between gap-2 border-t border-[var(--hud-border-subtle)] pt-1.5">
+                      <span className="tabular-mono font-bold text-[#6E7570]">
+                        Scale: {activeScale}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={isSelectedLocked}
+                          onClick={() =>
+                            onUpdateTransform(activeKey, {
+                              position: activePos,
+                              modelScale: Math.max(
+                                0.15,
+                                Math.round((activeScale - 0.1) * 100) / 100
+                              ),
+                              rotationY: activeRotationY,
+                              locked: isSelectedLocked,
+                            })
+                          }
+                          className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          -0.1
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSelectedLocked}
+                          onClick={() =>
+                            onUpdateTransform(activeKey, {
+                              position: activePos,
+                              modelScale:
+                                Math.round((activeScale + 0.1) * 100) / 100,
+                              rotationY: activeRotationY,
+                              locked: isSelectedLocked,
+                            })
+                          }
+                          className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          +0.1
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-[var(--hud-border-subtle)] pt-1.5">
+                      <span className="tabular-mono font-bold text-[#6E7570]">
+                        Rot Y: {Math.round((activeRotationY * 180) / Math.PI)}°
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={isSelectedLocked}
+                          onClick={() =>
+                            onUpdateTransform(activeKey, {
+                              position: activePos,
+                              modelScale: activeScale,
+                              rotationY: activeRotationY - Math.PI / 12,
+                              locked: isSelectedLocked,
+                            })
+                          }
+                          className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          -15°
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSelectedLocked}
+                          onClick={() =>
+                            onUpdateTransform(activeKey, {
+                              position: activePos,
+                              modelScale: activeScale,
+                              rotationY: activeRotationY + Math.PI / 12,
+                              locked: isSelectedLocked,
+                            })
+                          }
+                          className="rounded border border-[var(--hud-border-subtle)] bg-[#F2F2EF] px-2 py-0.5 font-bold hover:bg-[#EAE9E4] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          +15°
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleCopyCoords}
+                      className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#1B6E2D] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-[#155724]"
+                    >
+                      {copiedId === selectedPin.id ? (
+                        <>
+                          <Check className="h-3 w-3" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          Copy Coords
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onResetPinTransform(activeKey)}
+                      className="rounded-lg border border-[var(--hud-border-light)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#4A504C] hover:bg-[#EAE9E4]"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
         {customGlbUrl && (
           <div className="rounded-xl border border-[#1B6E2D]/30 bg-[#1B6E2D]/10 p-3 text-xs text-[#1B6E2D]">

@@ -14,6 +14,7 @@ import { HotspotBadge } from '@/components/HotspotBadge';
 import {
   BASE_STREET_SPLAT_PATH,
   type CommunityProblemPin,
+  type TransformMode,
   type TransformOverride,
   type ViewMode,
 } from '@/lib/data/upgrades';
@@ -32,7 +33,7 @@ interface SceneViewerProps {
   dropPinMode: boolean;
   onDropPinAt: (coords: [number, number, number]) => void;
   devTransformEnabled: boolean;
-  transformMode: 'translate' | 'scale';
+  transformMode: TransformMode;
   transformOverrides: Record<string, TransformOverride>;
   onUpdateTransform: (pinId: string, next: TransformOverride) => void;
   customGlbUrl?: string | null;
@@ -430,7 +431,7 @@ function UpgradeProp({
   rotation: [number, number, number];
   stretch: [number, number, number];
   showGizmo: boolean;
-  transformMode: 'translate' | 'scale';
+  transformMode: TransformMode;
   onGizmoDragChange: (dragging: boolean) => void;
   onCommitTransform: (next: TransformOverride) => void;
 }) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { HotspotBadge } from '@/components/HotspotBadge';
+import type { SharedCameraState } from '@/components/SparkSceneViewer';
 import type {
   CommunityProblemPin,
   TransformOverride,
@@ -10,6 +11,7 @@ import type {
 
 interface AholoSceneViewerProps {
   splatSrc: string;
+  active?: boolean;
   pins: CommunityProblemPin[];
   viewMode: ViewMode;
   selectedPinId: string | null;
@@ -23,6 +25,7 @@ interface AholoSceneViewerProps {
     target: [number, number, number];
     seq: number;
   } | null;
+  sharedCameraRef?: React.MutableRefObject<SharedCameraState>;
   dropPinMode: boolean;
   onDropPinAt: (coords: [number, number, number]) => void;
   transformOverrides: Record<string, TransformOverride>;
@@ -209,12 +212,14 @@ function resolveSplatSourceAndType(
 
 export function AholoSceneViewer({
   splatSrc,
+  active = true,
   pins,
   viewMode,
   selectedPinId,
   onSelectPin,
   activeHotspotIds,
   cameraGoal,
+  sharedCameraRef,
   dropPinMode,
   onDropPinAt,
   transformOverrides,
@@ -230,6 +235,12 @@ export function AholoSceneViewer({
   );
 
   // Refs for syncing React props cleanly into the rAF loop without re-creating Viewer
+  const activeRef = useRef(active);
+  const pendingCameraSyncRef = useRef(false);
+  if (active && !activeRef.current) {
+    pendingCameraSyncRef.current = true;
+  }
+  activeRef.current = active;
   const pinsRef = useRef(pins);
   const viewModeRef = useRef(viewMode);
   const activeIdsRef = useRef(activeHotspotIds);
@@ -371,6 +382,7 @@ export function AholoSceneViewer({
         viewerRef.current = viewer;
 
         setViewerConfig(viewer, {
+          pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
           pipeline: {
             Background: {
               enabled: true,
@@ -392,6 +404,9 @@ export function AholoSceneViewer({
                 toneMapping: ToneMapping.Neutral,
                 exposure: 1,
               },
+            },
+            TAA: {
+              enabled: true,
             },
           },
         });
@@ -809,6 +824,28 @@ export function AholoSceneViewer({
         const tick = (now: number) => {
           if (disposed) return;
           rafId = requestAnimationFrame(tick);
+          if (!activeRef.current) {
+            lastTime = now;
+            return;
+          }
+
+          // Sync camera back from SparkSceneViewer when toggling back to Current Reality
+          if (pendingCameraSyncRef.current && sharedCameraRef?.current) {
+            pendingCameraSyncRef.current = false;
+            cameraGoalRef.current.active = false;
+            const { position, target } = sharedCameraRef.current;
+            targetVec.set(target[0], target[1], target[2]);
+            camera.position.set(position[0], position[1], position[2]);
+            const syncedOffset = new Vector3().subVectors(
+              camera.position,
+              targetVec
+            );
+            radius = Math.max(1.5, syncedOffset.length());
+            theta = Math.atan2(syncedOffset.x, syncedOffset.z);
+            phi = Math.acos(
+              Math.min(1, Math.max(-1, syncedOffset.y / radius))
+            );
+          }
 
           const dt = Math.min(0.05, (now - lastTime) / 1000);
           lastTime = now;
@@ -848,6 +885,12 @@ export function AholoSceneViewer({
           }
 
           camera.lookAt(targetVec);
+          if (sharedCameraRef) {
+            sharedCameraRef.current = {
+              position: [camera.position.x, camera.position.y, camera.position.z],
+              target: [targetVec.x, targetVec.y, targetVec.z],
+            };
+          }
           viewer.render();
 
           // Project 3D pins into 2D screen space for HTML markers
@@ -928,7 +971,7 @@ export function AholoSceneViewer({
         viewerRef.current = null;
       }
     };
-  }, [splatSrc, customGlbUrl]);
+  }, [splatSrc, customGlbUrl, sharedCameraRef]);
 
   // Load GLTF props for dynamically dropped pins added after mount
   useEffect(() => {

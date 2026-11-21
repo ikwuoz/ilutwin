@@ -10,14 +10,18 @@ import { SidebarUI } from '@/components/SidebarUI';
 import {
   CAMERA_PRESETS,
   COMMUNITY_PROBLEM_PINS,
+  getInstanceOverrideKey,
+  getPinInstances,
+  parseInstanceOverrideKey,
   summarizeCivicImpact,
   type CameraPreset,
   type CommunityProblemPin,
+  type TransformMode,
   type TransformOverride,
   type ViewMode,
 } from '@/lib/data/upgrades';
 
-const PROP_TRANSFORMS_STORAGE_KEY = 'ilutwin.propTransforms.v1';
+const PROP_TRANSFORMS_STORAGE_KEY = 'ilutwin.propTransforms.v2';
 
 const ExploreViewer = dynamic(
   () => import('@/components/ExploreViewer').then((m) => m.ExploreViewer),
@@ -44,6 +48,9 @@ function ExploreContent() {
   );
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
+  const [selectedInstanceKey, setSelectedInstanceKey] = useState<string | null>(
+    null
+  );
   const [activeHotspotIds, setActiveHotspotIds] = useState<string[]>(() =>
     COMMUNITY_PROBLEM_PINS.map((p) => p.id)
   );
@@ -67,11 +74,10 @@ function ExploreContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState('');
 
-  // Dev-mode prop alignment state
+  // Prop alignment state
   const [devTransformEnabled, setDevTransformEnabled] = useState(false);
-  const [transformMode, setTransformMode] = useState<'translate' | 'scale'>(
-    'translate'
-  );
+  const [transformMode, setTransformMode] =
+    useState<TransformMode>('translate');
   const [transformOverrides, setTransformOverrides] = useState<
     Record<string, TransformOverride>
   >({});
@@ -125,33 +131,49 @@ function ExploreContent() {
     (preset: CameraPreset) => {
       setActivePresetId(preset.id);
       setSelectedPinId(preset.pinId ?? null);
+      setSelectedInstanceKey(
+        preset.pinId ? getInstanceOverrideKey(preset.pinId, '0') : null
+      );
       flyTo(preset.position, preset.target);
     },
     [flyTo]
   );
 
   const handleToggleLockPin = useCallback(
-    (pinId: string) => {
+    (instanceKey: string) => {
+      const { pinId, instanceId } = parseInstanceOverrideKey(instanceKey);
       const pin = pins.find((p) => p.id === pinId);
       if (!pin) return;
-      const cur = transformOverrides[pinId];
+      const inst =
+        getPinInstances(pin).find((i) => i.id === instanceId) ??
+        getPinInstances(pin)[0];
+      const cur = transformOverrides[instanceKey];
       const nextLocked = !(cur?.locked ?? false);
       setTransformOverrides((prev) => {
-        const latest = prev[pinId];
+        const latest = prev[instanceKey];
+        const basePos = inst?.position ?? pin.position;
+        const baseScale = inst?.modelScale ?? pin.modelScale;
+        const baseRotY =
+          inst?.rotation?.[1] ??
+          inst?.rotationY ??
+          pin.rotation?.[1] ??
+          pin.rotationY;
         return {
           ...prev,
-          [pinId]: {
-            position: latest?.position ?? pin.position,
-            modelScale: latest?.modelScale ?? pin.modelScale,
-            rotationY: latest?.rotationY ?? pin.rotation?.[1] ?? pin.rotationY,
+          [instanceKey]: {
+            position: latest?.position ?? basePos,
+            modelScale: latest?.modelScale ?? baseScale,
+            rotationY: latest?.rotationY ?? baseRotY,
+            rotation: latest?.rotation ?? inst?.rotation ?? pin.rotation,
             locked: nextLocked,
           },
         };
       });
+      const label = inst?.label ?? pin.title;
       setNotice(
         nextLocked
-          ? `Locked ${pin.title} position.`
-          : `Unlocked ${pin.title} for dragging.`
+          ? `Locked ${label} position.`
+          : `Unlocked ${label} for dragging & rotation.`
       );
     },
     [pins, transformOverrides]
@@ -182,15 +204,20 @@ function ExploreContent() {
         return;
       }
 
-      if (key === 'l' && selectedPinId && viewMode === 'upgrade') {
-        handleToggleLockPin(selectedPinId);
+      const activeKey =
+        selectedInstanceKey ??
+        (selectedPinId ? getInstanceOverrideKey(selectedPinId, '0') : null);
+      if (key === 'l' && activeKey && viewMode === 'upgrade') {
+        handleToggleLockPin(activeKey);
         return;
       }
 
-      // Alignment mode shortcuts
-      if (devTransformEnabled) {
+      // Direct gizmo mode shortcuts in Lux3D Upgrade mode
+      if (viewMode === 'upgrade') {
         if (key === 'g' || key === 't') {
           setTransformMode('translate');
+        } else if (key === 'r') {
+          setTransformMode('rotate');
         } else if (key === 's') {
           setTransformMode('scale');
         }
@@ -200,18 +227,23 @@ function ExploreContent() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
-    devTransformEnabled,
     handleSelectPreset,
     handleToggleLockPin,
+    selectedInstanceKey,
     selectedPinId,
     viewMode,
   ]);
 
   const handleSelectPin = (
     pin: CommunityProblemPin | null,
-    options?: { skipFly?: boolean }
+    options?: { skipFly?: boolean; instanceKey?: string }
   ) => {
     setSelectedPinId(pin?.id ?? null);
+    setSelectedInstanceKey(
+      pin
+        ? (options?.instanceKey ?? getInstanceOverrideKey(pin.id, '0'))
+        : null
+    );
     setActivePresetId(null);
     if (pin) {
       if (!activeHotspotIds.includes(pin.id)) {
@@ -345,6 +377,7 @@ function ExploreContent() {
           pins={pins}
           viewMode={viewMode}
           selectedPinId={selectedPinId}
+          selectedInstanceKey={selectedInstanceKey}
           onSelectPin={handleSelectPin}
           activeHotspotIds={activeHotspotIds}
           cameraGoal={cameraGoal}
@@ -352,8 +385,11 @@ function ExploreContent() {
           onDropPinAt={handleDropPinAt}
           devTransformEnabled={devTransformEnabled}
           transformMode={transformMode}
+          onChangeTransformMode={setTransformMode}
           transformOverrides={transformOverrides}
           onUpdateTransform={handleUpdateTransform}
+          onToggleLockKey={handleToggleLockPin}
+          onResetTransformKey={handleResetPinTransform}
           customGlbUrl={glbUrl}
           customSplatUrl={splatUrl}
           onSplatStatusChange={handleSplatStatusChange}
@@ -364,6 +400,7 @@ function ExploreContent() {
           viewMode={viewMode}
           onChangeViewMode={setViewMode}
           selectedPinId={selectedPinId}
+          selectedInstanceKey={selectedInstanceKey}
           onSelectPin={handleSelectPin}
           activeHotspotIds={activeHotspotIds}
           onToggleHotspot={handleToggleHotspot}

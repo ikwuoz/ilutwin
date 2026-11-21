@@ -26,11 +26,11 @@ Instead of top-down guesses, urban planners, community leaders, and NGOs get acc
 No external API key is needed to evaluate the 3D Explorer: `/public/models/lagos_street.spz` and `/public/models/*.glb` are bundled locally, and **Instant Catalog** lets you co-design without hitting paid endpoints.
 
 1. Run `npm install && npm run dev` and open [http://localhost:3000/explore](http://localhost:3000/explore).
-2. Inspect the street starting in **Current Reality** baseline mode (`₦0` deployed · `₦1,120,000` planned).
-3. Press **`V`** (or click **Lux3D Upgrade**) to reveal the 3 calibrated `.glb` props (**Drain Cover**, **Solar Streetlamp**, **Waste Hub**).
+2. Inspect the street starting in **Current Reality** baseline mode (`₦0` deployed · `₦2,140,000` planned).
+3. Press **`V`** (or click **Lux3D Upgrade**) to reveal the calibrated multi-instance `.glb` corridor (**5× Drain Slabs**, **3× Solar Streetlamps**, **1× Waste Hub**) rendered via Three.js + Spark.js with PBR lighting and soft shadows.
 4. Press keys **`1`–`4`** to glide between Overview, Drainage Hotspot, Alley Lighting, and Waste Hub presets.
-5. **Drag** any 3D prop to reposition it (`Shift` + drag adjusts height) and click **Lock (`L`)** to lock its position to `localStorage`.
-6. Click **Drop New Pin** -> click anywhere on the corridor -> pick **Instant Catalog** (or generate live via Lux3D if `AHOLO_API_KEY` is configured) and watch Naira (`₦`) budget & household reach update live (`₦1,120,000` -> `₦1,440,000` for an added Open Drain).
+5. **Drag** any individual 3D prop instance to reposition it (`Shift` + drag adjusts height, `Alt` + drag rotates yaw) or use the in-canvas 3D gizmo (`G` Move, `R` Rotate, `S` Scale), then click **Lock (`L`)** to persist its transform to `localStorage`.
+6. Click **Drop New Pin** -> click anywhere on the corridor -> pick **Instant Catalog** (or generate live via Lux3D if `AHOLO_API_KEY` is configured) and watch Naira (`₦`) budget & household reach update live (`₦2,140,000` -> `₦2,460,000` for an added Open Drain).
 7. Click **Export JSON** or **Print Brief** to generate planner-ready deliverables.
 
 ---
@@ -39,7 +39,7 @@ No external API key is needed to evaluate the 3D Explorer: `/public/models/lagos
 
 - **Framework:** Next.js 15 (App Router) + React 19 + TypeScript
 - **Styling:** Tailwind CSS v4
-- **3D Rendering:** `three`, `@react-three/fiber`, `@react-three/drei` (`Splat`, `Gltf`, `Html`, `OrbitControls`, `TransformControls`), plus `@manycore/aholo-viewer`
+- **3D Rendering:** Dual-engine — `@manycore/aholo-viewer` (**Current Reality** 3DGS baseline) + `three` & `@sparkjsdev/spark` (**Lux3D Upgrade** PBR, IBL, shadows & `TransformControls`), with `@react-three/fiber` / `@react-three/drei` fallback
 - **Aholo SDKs:**
   - `@manycore/aholo-sdk-asset` (media uploads to Aholo OUS)
   - `@manycore/aholo-sdk-world` (3DGS street reconstruction & spatial generation)
@@ -163,10 +163,10 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
    - **Aholo World (3DGS):** Upload a short street walkthrough video (`.mp4`, `.mov`, `.insv`) or **20+ overlapping photos** (`.jpg`, `.png`, `.webp`) to reconstruct a 3DGS scene, or use *Quick AI Scene* for a single reference photo.
    - **Aholo Lux3D (`G1-Turbo`):** Generate practical 3D upgrade assets from Lagos presets, custom text prompts, or a single photo (`img-to-3d`), then jump straight to `/explore`.
 3. **3D Explorer (`/explore`)**:
-   - Auto-loads `/models/lagos_street.spz` first (falling back to `.splat`, `.ply`, or the procedural R3F street if absent) inside `ExploreViewer` / `AholoSceneViewer` (`@manycore/aholo-viewer`), with remote World/Lux3D outputs streamed via `/api/world/asset` and `/api/lux3d/model`.
+   - Auto-loads `/models/lagos_street.spz` first (falling back to `.splat`, `.ply`, or the procedural R3F street if absent) using a dual-engine viewer: `@manycore/aholo-viewer` for **Current Reality** and Three.js + `@sparkjsdev/spark` for **Lux3D Upgrade**, with remote World/Lux3D outputs streamed via `/api/world/asset` and `/api/lux3d/model`.
    - Opens in **Current Reality** baseline mode at the `Overview` camera angle (`V` toggles **Current Reality** ↔ **Lux3D Upgrade**, or pass `?mode=upgrade`).
    - Click projected 3D hotspot pills or use **Camera Presets** (`1` Overview, `2` Drainage Hotspot, `3` Alley Lighting, `4` Waste Hub) for smooth camera glides.
-   - **Click-and-Drag + Lock Placement:** Props start unlocked for immediate 3D dragging across the street (`Shift` + drag adjusts vertical height); click **Lock** (`L`) in the **Prop Placement** HUD to lock a prop's resulting position into `localStorage` (`ilutwin.propTransforms.v1`) so camera orbiting never nudges it, or expand **Adjust** for fine `X/Y/Z`, `Scale`, `Rot Y`, and `Reset` controls.
+   - **Flexible Cursor Controls + Lock Placement:** Props start unlocked for immediate 3D manipulation — drag to move (`X/Z`), `Shift` + drag for vertical height (`Y`), `Alt` + drag for 360° yaw rotation, or switch the 3D gizmo (`G` Move, `R` Rotate, `S` Scale). Click **Lock (`L`)** to persist any instance's transform to `localStorage` (`ilutwin.propTransforms.v2`).
    - Click **Drop New Pin** anywhere on the street to capture clamped `[x, y, z]` coordinates, pick an issue type or custom prompt, and place a live Lux3D `.glb` or Instant Catalog upgrade.
    - Review the **Civic Impact** summary (active upgrades, estimated Naira `₦` deployment cost, impacted households) and click **Export JSON** or **Print Brief**.
 
@@ -174,12 +174,13 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 | Preset (`Key`) | Hotspot | Asset (`.glb`) | Est. Cost (`₦`) | Reach |
 |---|---|---|---|---|
-| `1` Overview | Full Street Corridor | All 3 props | `₦1,120,000` total | `85 hh` |
-| `2` Drainage Hotspot | Flooded Alley Junction | `drain_cover.glb` | `₦480,000` (`15m Drain`) | `32 hh` |
-| `3` Alley Lighting | Dark Market Footpath | `solar_lamp.glb` | `₦350,000` (`1 Solar Lamp`) | `28 hh` |
-| `4` Waste Hub | Blocked Culvert Corner | `waste_hub.glb` | `₦290,000` (`1 Waste Hub`) | `25 hh` |
+| `1` Overview | Full Street Corridor | 5× Drain · 3× Lamp · 1× Hub | `₦2,140,000` total | `123 hh` |
+| `2` Drainage Hotspot | Flooded Alley Junction | `drain_cover.glb` (×5) | `₦800,000` (`20m Drain`) | `42 hh` |
+| `3` Alley Lighting | Dark Market Footpath | `solar_lamp.glb` (×3) | `₦1,050,000` (`3 Solar Lamps`) | `56 hh` |
+| `4` Waste Hub | Blocked Culvert Corner | `waste_hub.glb` (×1) | `₦290,000` (`1 Waste Hub`) | `25 hh` |
 
 - **View Mode Toggle (`V`)**: Switches between **Current Reality** baseline and **Lux3D Upgrade**.
+- **Transform Gizmo (`G` / `R` / `S`)**: Switches between **Move**, **Rotate**, and **Scale** on the selected prop instance.
 - **Lock / Unlock Prop (`L`)**: Prevents accidental nudges while orbiting after positioning a prop.
 
 ---

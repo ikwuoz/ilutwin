@@ -2,6 +2,8 @@
 
 import {
   formatNgn,
+  getPinComputedCost,
+  getPinInstanceCount,
   type CommunityProblemPin,
   type PinCategory,
 } from '@/lib/data/upgrades';
@@ -42,6 +44,8 @@ export function HotspotBadge({
   const dotColor = isUpgradeActive
     ? 'bg-[#10B954]'
     : CATEGORY_DOT_COLORS[pin.category];
+  const computedCost = getPinComputedCost(pin);
+  const instanceCount = getPinInstanceCount(pin);
 
   return (
     <div className="group relative inline-flex flex-col items-center">
@@ -60,7 +64,7 @@ export function HotspotBadge({
               isSelected ? 'text-[#10B954]' : 'text-[#1B6E2D]'
             }`}
           >
-            {formatNgn(pin.estimatedCostNgn)}
+            {formatNgn(computedCost)}
           </span>
         </div>
         <p
@@ -112,7 +116,8 @@ export function HotspotBadge({
             isSelected ? 'text-white/90' : 'text-[#4A504C]'
           }`}
         >
-          {formatNgn(pin.estimatedCostNgn)}
+          {instanceCount > 1 ? `×${instanceCount} · ` : ''}
+          {formatNgn(computedCost)}
         </span>
       </button>
     </div>
